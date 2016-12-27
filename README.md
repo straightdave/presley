@@ -27,7 +27,7 @@ get '/hello' {
 
 get '/weirdheader' {
 	
-	@{ code = 404; headers = @{ my_header = "header1" }, body = "<h1>hello</h1>"
+	@{ code = 404; headers = @{ my_header = "header1" }, body = "<h1>hello</h1>"}
 }
 ```
 
@@ -55,7 +55,7 @@ get '/hello' {
 
 get '/weirdheader' {
 	
-	@{ code = 404; headers = @{ my_header = "header1" }, body = "<h1>hello</h1>"
+	@{ code = 404; headers = @{ my_header = "header1" }, body = "<h1>hello</h1>"}
 }
 
 run
