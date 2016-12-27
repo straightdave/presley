@@ -1,5 +1,10 @@
-# psinatra
-sinatra for PowerShell!
+# pSinatra
+![sinatra](http://www.sinatrarb.com/) for PowerShell!
+
+Don't you think it is extremely hard to setup a simple HTTP server on Windows? Have you ever tried a lot to install a Visual Studio, or downloading huge .Net framework, or doing a great deal of boilerplate work with ASP.NET just for a small and simple server?
+Installing DevKit to mimic things on Linux platform, like Rails (ruby) or Flask (python)? It works but you know on Windows...
+
+OK. This one is for you.
 
 ## How to use
 
