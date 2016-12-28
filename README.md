@@ -10,12 +10,14 @@ OK. This one is for you.
 
 Create a PowerShell script file, then:
 
-1. Load pSinatra library
+* Load pSinatra library
+
 ```powershell
 . .\psinatra.ps1    # I really love this way loading
 ```
 
-2. Define your routers
+* Define your routers
+
 ```powershell
 get '/' {
 	# do something for 'GET / HTTP 1.1'
@@ -30,18 +32,20 @@ get '/hello' {
 	"Hello $name!"  # => last string as http body
 }
 
-get '/weirdheader' {
+get '/someurl' {
 	
-	@{ code = 404; headers = @{ my_header = "header1" }, body = "<h1>hello</h1>"}
+	@{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
 }
 ```
 
-3. Add a run command (literally)
+* Add a run command (literally)
+
 ```powershell
 run
 ```
 
-Full script:
+The full script:
+
 ```powershell
 . .\psinatra.ps1
 
@@ -59,8 +63,9 @@ get '/hello' {
 }
 
 get '/weirdheader' {
-	
-	@{ code = 404; headers = @{ my_header = "header1" }, body = "<h1>hello</h1>"}
+	# use a hashtable as the last statement 
+	# where you can put your specified status code and headers in
+	@{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
 }
 
 run
