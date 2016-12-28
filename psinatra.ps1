@@ -1,5 +1,5 @@
 #==============
-# sinatra.ps1
+# psinatra.ps1
 #==============
 [console]::TreatControlCAsInput = $true
 
@@ -12,16 +12,25 @@ function get($path, $block) {
   $_routers["GET " + $path] = $block
 }
 
+function post($path, $block) {
+  $_routers["POST " + $path] = $block
+}
+
 function get_routers {
   $_routers
 }
 
-function _write($res, [int]$code = 200, $headers = @{}, $body) {
+function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
+new-alias "??" _coalesce -force
+
+function _write($res, [hashtable]$hash = @{}) {
+  $headers = ?? $hash["headers"] @{}
   $headers.keys | % {
     $res.headers.add($_, $headers[$_])
   }
-
-  $res.StatusCode = $code
+  
+  $res.StatusCode = ?? $hash["code"] 200
+  $body = ?? $hash["body"] ""
   $buffer = [System.Text.Encoding]::utf8.GetBytes($body)
   $stream = $res.outputstream
   $stream.write($buffer, 0, $buffer.length)
@@ -29,12 +38,12 @@ function _write($res, [int]$code = 200, $headers = @{}, $body) {
 }
 
 function _write_text($res, $text) {
-  _write -res $res -body $text
+  _write -res $res -hash @{ body = $text }
 }
 
 function run($bind = "localhost", [int]$port = 9999) {
   if (-not [system.net.httplistener]::IsSupported) {
-    write-host "http listener is not supported"
+    write-host "http listener is not supported" -f red
     exit
   }
 
@@ -44,7 +53,7 @@ function run($bind = "localhost", [int]$port = 9999) {
     $server.prefixes.add("$binding/")
   }
   catch {
-    write-host "cannot open at $binding"
+    write-host "cannot open listening at $binding" -f red
     exit
   }
 
@@ -88,14 +97,15 @@ function run($bind = "localhost", [int]$port = 9999) {
 
       # support hashtable or string as response
       if ($_block_result -is "hashtable") {
-        _write -res $_res -code $_block_result["code"] -headers $_block_result["headers"] -body $_block_result["body"]
+        _write -res $_res -hash $_block_result
       }
       else {
         _write_text -res $_res -text $_block_result
       }
     }
     else {
-      _write -res $_res -code 404 -body "<h1>404 Not Found</h1><h2>$key</h2>"
+      _write -res $_res `
+             -hash @{code = 404; body = "<h1>404 Not Found</h1><h2>$key</h2>"}
     }
 
     _log_once

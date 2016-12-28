@@ -1,5 +1,5 @@
 # load psinatra
-. .\psinatra.ps1
+. ..\psinatra.ps1
 
 # define routers (and actions)
 get '/hello' {
@@ -17,6 +17,14 @@ get '/hi' {
   $response["body"] = "wahahaha hahaha"
 
   # the last return item is a hashtable
+  $response
+}
+
+get '/getjson' {
+  $response = @{}
+  $response["headers"] = @{ "ContentType" = "application/json" }
+  $response["body"] = "{`"message`":`"i am json`"}"
+
   $response
 }
 
