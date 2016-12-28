@@ -17,6 +17,7 @@ Create a PowerShell script file, then:
 ```
 
 * Define your routers
+
 >Currently I've just implemented several matching patterns of GET request:
 - GET /static_route
 - GET /path/:with/some/:variable
@@ -26,21 +27,24 @@ Create a PowerShell script file, then:
 
 ```powershell
 get '/' {
-	# do something for 'GET / HTTP 1.1'
-
-	"Hello world!"  # => last string as http body
+	"Hello world!"
 }
 
 get '/hello' {
-	# do something for 'GET /hello HTTP 1.1'
-
-	$name = $_param["name"]
-	"Hello $name!"  # => last string as http body
+	$name = $_params["name"]
+	"Hello $name!"
 }
 
 get '/someurl' {
-	
+  # respond with status code, your extra headers or body
 	@{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
+}
+
+get '/aloha/:name/age/:age' {
+	$name = $_params["name"]
+	$age  = $_params["age"]
+
+	"Aloha $name, you are $age!"
 }
 ```
 
@@ -50,27 +54,21 @@ get '/someurl' {
 run
 ```
 
-The full script:
+The full script is like:
 
 ```powershell
 . .\psinatra.ps1
 
 get '/' {
-	# do something for 'GET / HTTP 1.1'
-
-	"Hello world!"  # => last string as http body
+	"Hello world!"
 }
 
 get '/hello' {
-	# do something for 'GET /hello HTTP 1.1'
-
-	$name = $_param["name"]
-	"Hello $name!"  # => last string as http body
+	$name = $_params["name"]
+	"Hello $name!"
 }
 
 get '/weirdheader' {
-	# use a hashtable as the last statement 
-	# where you can put your specified status code and headers in
 	@{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
 }
 
