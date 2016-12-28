@@ -17,6 +17,12 @@ Create a PowerShell script file, then:
 ```
 
 * Define your routers
+>Currently I've just implemented several matching patterns of GET request:
+- GET /static_route
+- GET /path/:with/some/:variable
+- GET /path?with=querystrings
+
+>For more info please refer to the `.\examples\example.ps1`
 
 ```powershell
 get '/' {
@@ -71,9 +77,15 @@ get '/weirdheader' {
 run
 ```
 
+>for more detailed info, please refer to `.\examples\example.ps1`
+
 ## Run! Run!
-After definding your routers in `app.ps1`, invoke the script:
+After definding your routers in script `app.ps1`, execute this script:
 
 ```
 PS> .\app.ps1
 ```
+
+>you can stop listening loop by hitting 'Ctrl-C' in PowerShell session.
+But currently you have to wait for the next request catch to stop the listening loop.
+It will get improved (hopefully) in the short future.

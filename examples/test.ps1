@@ -13,7 +13,6 @@ $routers_to_test = @(
   "GET /"
 )
 
-
 function matching_router($patterns, $router_to_test) {
   $_param = @{}
 
