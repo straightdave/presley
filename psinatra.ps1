@@ -75,40 +75,46 @@ function run($bind = "localhost", [int]$port = 9999) {
     $global:_res   = $_context.Response
     $global:_param = $_req.QueryString
 
-    $key = $_req.HttpMethod + " " + $_req.Url.AbsolutePath
+    try {
+      $key = $_req.HttpMethod + " " + $_req.Url.AbsolutePath
 
-    # match url
-    # TODO: to match more complex urls
-    if ($_routers.keys -contains $key) {
-      $_b = $_routers[$key]
-      if ($_b -isnot "scriptblock") {
-        write-host "no block defined for $key" -f red
-        exit
-      }
+      # match url
+      # TODO: to match more complex urls
+      if ($_routers.keys -contains $key) {
+        $_b = $_routers[$key]
+        if ($_b -isnot "scriptblock") {
+          write-host "no block defined for $key" -f red
+          exit
+        }
 
-      # execute block
-      try {
-        $_block_result = $_b.Invoke()[-1]
-      }
-      catch {
-        write-host $_.exception.message -f red
-        exit
-      }
+        # execute block
+        try {
+          $_block_result = $_b.Invoke()[-1]
+        }
+        catch {
+          write-host $_.exception.message -f red
+          exit
+        }
 
-      # support hashtable or string as response
-      if ($_block_result -is "hashtable") {
-        _write -res $_res -hash $_block_result
+        # support hashtable or string as response
+        if ($_block_result -is "hashtable") {
+          _write -res $_res -hash $_block_result
+        }
+        else {
+          _write_text -res $_res -text $_block_result
+        }
       }
       else {
-        _write_text -res $_res -text $_block_result
+        # no matched router
+        _write -res $_res `
+               -hash @{code = 404; body = "<h1>404 Not Found</h1><h2>$key</h2>"}
       }
-    }
-    else {
-      _write -res $_res `
-             -hash @{code = 404; body = "<h1>404 Not Found</h1><h2>$key</h2>"}
-    }
 
-    _log_once
+      _log_once
+    }
+    catch {
+      continue
+    }
   }
 
   $server.stop()
