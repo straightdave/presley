@@ -27,24 +27,24 @@ Create a PowerShell script file, then:
 
 ```powershell
 get '/' {
-	"Hello world!"
+  "Hello world!"
 }
 
 get '/hello' {
-	$name = $_params["name"]
-	"Hello $name!"
+  $name = $_params["name"]
+  "Hello $name!"
 }
 
 get '/someurl' {
   # respond with status code, your extra headers or body
-	@{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
+  @{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
 }
 
 get '/aloha/:name/age/:age' {
-	$name = $_params["name"]
-	$age  = $_params["age"]
+  $name = $_params["name"]
+  $age  = $_params["age"]
 
-	"Aloha $name, you are $age!"
+  "Aloha $name, you are $age!"
 }
 ```
 
@@ -60,16 +60,16 @@ The full script is like:
 . .\psinatra.ps1
 
 get '/' {
-	"Hello world!"
+  "Hello world!"
 }
 
 get '/hello' {
-	$name = $_params["name"]
-	"Hello $name!"
+  $name = $_params["name"]
+  "Hello $name!"
 }
 
 get '/weirdheader' {
-	@{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
+  @{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
 }
 
 run

@@ -13,7 +13,7 @@ get '/hello' {
   $path = $_req.Url.absolutepath
 
   # there're two ways to make http response
-  # way 1: the last string value of the block 
+  # way 1: the last string value of the block
   #        as the http body value (this example)
   "Hello $name at $path!"
 }
