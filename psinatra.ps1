@@ -12,6 +12,7 @@
 $global:_req    = $null
 $global:_params = $null
 $global:_res    = $null
+$global:_body   = $null
 $global:_path_variables = @{}
 
 $routers = @{}
@@ -63,7 +64,11 @@ function run($bind = "localhost", [int]$port = 9999) {
       }
     }
 
-    $context        = $server.GetContext() # blocking here
+    # block until get new request
+    $context        = $server.GetContext()
+
+    # (re)set variables per each request
+    $start_time     = Get-Date
     $global:_req    = $context.Request
     $global:_res    = $context.Response
     $global:_params = $_req.QueryString
@@ -78,6 +83,19 @@ function run($bind = "localhost", [int]$port = 9999) {
           break
         }
 
+        # set request body and add POST/PUT params
+        if ($_req.HttpMethod -eq "POST" -or `
+            $_req.HttpMethod -eq "PUT") {
+          $reader = new-object -type system.io.streamreader `
+                    $_req.inputstream
+          $global:_body = $reader.readtoend()
+          $global:_body.split('&') | % {
+            $this_kv = $_
+            $splits = $this_kv.split('=')
+            $global:_params[$($splits[0])] = (?? $splits[1] "")
+          }
+        }
+
         # execute block and respond
         $block_result = $block.Invoke($global:_path_variables)[-1]
         if ($block_result -is "hashtable") {
@@ -90,14 +108,14 @@ function run($bind = "localhost", [int]$port = 9999) {
       else {
         # no matched router
         _write -res $_res `
-               -hash @{code = 404; body = "<h1>404 Not Found</h1><h2>$key</h2>"}
+               -hash @{code = 404; body = "<h1>Sinatra doesn't know this ditty</h1><h2>$key</h2>"}
       }
 
-      _log_once
+      _log_once -start $start_time
     }
     catch {
       write-host $_.exception.message -f red
-      break
+      # break
     }
   }
 
@@ -106,18 +124,19 @@ function run($bind = "localhost", [int]$port = 9999) {
   exit
 }
 
-function _log_once {
-  $time   = get-date
+function _log_once($start) {
+  $time   = $start
+  $dur    = (Get-Date).millisecond - $start.millisecond
   $ip     = $_req.RemoteEndPoint
   $method = $_req.HttpMethod
   $path   = $_req.RawUrl
   $ver    = $_req.ProtocolVersion
   $code   = $_res.StatusCode
-  "$ip -- [$time] `"$method $path`" HTTP $ver $code"
+  "$ip -- [$time] `"$method $path`" HTTP $ver $code ($dur ms)"
 }
 
 function _matching_router($request_to_test) {
-  $_block = $null
+  $block = $null
   $router_patterns.keys | % {
     $this_p = $_
     if ($request_to_test -match $this_p) {
@@ -127,11 +146,11 @@ function _matching_router($request_to_test) {
           $global:_path_variables[$_] = $matches[$_]
         }
       }
-      $_block = $router_patterns[$this_p]
+      $block = $router_patterns[$this_p]
       return
     }
   }
-  $_block
+  $block
 }
 
 function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
@@ -142,7 +161,6 @@ function _write($res, [hashtable]$hash = @{}) {
   $headers.keys | % {
     $res.headers.add($_, $headers[$_])
   }
-  
   $res.StatusCode = ?? $hash["code"] 200
   $body = ?? $hash["body"] ""
   $buffer = [System.Text.Encoding]::utf8.GetBytes($body)

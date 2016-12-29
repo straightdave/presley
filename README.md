@@ -18,12 +18,14 @@ Create a PowerShell script file, then:
 
 * Define your routers
 
->Currently I've just implemented several matching patterns of GET request:
+>Currently I've just implemented several matching patterns of GET/POST request:
 - GET /static_route
 - GET /path/:with/some/:variable
 - GET /path?with=querystrings
+- POST /people (with request body)
+- ...
 
->For more info please refer to the `.\examples\example.ps1`
+>For more info please refer to the scripts in `.\examples\`
 
 ```powershell
 get '/' {
@@ -45,6 +47,14 @@ get '/aloha/:name/age/:age' {
   $age  = $_params["age"]
 
   "Aloha $name, you are $age!"
+}
+
+post '/people' {
+	$name = $_params["name"]  # you can get post params quickly this way
+
+	# in POST/PUT request handlers, you can get raw body content
+	# by $_body
+	"posted data: name = $name, body = $_body"
 }
 ```
 
@@ -72,12 +82,15 @@ get '/weirdheader' {
   @{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
 }
 
+post '/people' {
+	# add a person data
+	"{`"msg`": `"done`"}"
+}
+
 run
 ```
 
->for more detailed info, please refer to `.\examples\example.ps1`
-
-## Run! Run!
+## Run! Forrest, Run!
 After definding your routers in script `app.ps1`, execute this script:
 
 ```
@@ -85,5 +98,5 @@ PS> .\app.ps1
 ```
 
 >you can stop listening loop by hitting 'Ctrl-C' in PowerShell session.
-But currently you have to wait for the next request catch to stop the listening loop.
+But currently you have to wait for the next request catch to stop the listening loop since http listening blocks.
 It will get improved (hopefully) in the short future.
