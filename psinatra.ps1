@@ -1,33 +1,30 @@
-#==============
-# psinatra.ps1
-#==============
-
-$_routers = @{}
-$_router_patterns = @{}
+#=====================================================
+# psinatra.ps1 
+# - http://github.com/straightdave/psinatra
+#
+# Naming rules:
+# - all pre-defined objects that exposed 
+#   to programmers have prefix "_";
+# - all pre-defined functions that exposed 
+#   to programmers have no prefix "_";
+#=====================================================
 
 $global:_req    = $null
 $global:_params = $null
-$global:_path_variables = @{}
 $global:_res    = $null
+$global:_path_variables = @{}
+
+$routers = @{}
+$router_patterns = @{}
 
 function get($path, $block) {
-  $_routers["GET $path"] = $block
+  $routers["GET $path"] = $block
 }
 
 function post($path, $block) {
-  $_routers["POST $path"] = $block
+  $routers["POST $path"] = $block
 }
 
-function get_routers {
-  $_routers
-}
-
-#=====================================================
-# function 'run': the main process of app
-# - bind address and port are changeable
-# * Note: ensure this is called at the end, 
-#         or some internal functions are invailable
-#=====================================================
 function run($bind = "localhost", [int]$port = 9999) {
   [console]::TreatControlCAsInput = $true
 
@@ -36,10 +33,10 @@ function run($bind = "localhost", [int]$port = 9999) {
     exit
   }
 
-  # pre-process _routers for pattern matching
-  $_routers.keys | % {
+  # pre-process: analyze their matching patterns
+  $routers.keys | % {
     $p = $_ -replace ":(\w+)", "(?<$+>\w+)"
-    $_router_patterns["^$p$"] = $_routers[$_]
+    $router_patterns["^$p$"] = $routers[$_]
   }
 
   # start server
@@ -48,7 +45,7 @@ function run($bind = "localhost", [int]$port = 9999) {
     $server = new-object -type system.net.httplistener
     $server.prefixes.add("$address/")
     $server.start()
-    write-host "Sinatra is started on $address" -f cyan
+    write-host "Sinatra is started at $address" -f cyan
   }
   catch {
     write-host "cannot start listening at $address" -f red
@@ -58,16 +55,17 @@ function run($bind = "localhost", [int]$port = 9999) {
   while($server.IsListening) {
     if ([console]::KeyAvailable) {
       $key = [system.console]::readkey($true)
-      if (($key.modifiers -band [consolemodifiers]"control") -and ($key.key -eq "C"))
+      if (($key.modifiers -band [consolemodifiers]"control") `
+          -and ($key.key -eq "C"))
       {  
         write-host "Sinatra is leaving the stage..." -f yellow
         break
       }
     }
 
-    $_context       = $server.GetContext() # blocking here
-    $global:_req    = $_context.Request
-    $global:_res    = $_context.Response
+    $context        = $server.GetContext() # blocking here
+    $global:_req    = $context.Request
+    $global:_res    = $context.Response
     $global:_params = $_req.QueryString
     $global:_path_variables = @{}
 
@@ -80,10 +78,8 @@ function run($bind = "localhost", [int]$port = 9999) {
           break
         }
 
-        # execute block
+        # execute block and respond
         $block_result = $block.Invoke($global:_path_variables)[-1]
-        
-        # respond
         if ($block_result -is "hashtable") {
           _write -res $_res -hash $block_result
         }
@@ -106,7 +102,7 @@ function run($bind = "localhost", [int]$port = 9999) {
   }
 
   $server.stop()
-  "Sinatra stopped his performance"
+  "Sinatra stopped his performance. [Applaud]"
   exit
 }
 
@@ -120,18 +116,18 @@ function _log_once {
   "$ip -- [$time] `"$method $path`" HTTP $ver $code"
 }
 
-function _matching_router($router_to_test) {
+function _matching_router($request_to_test) {
   $_block = $null
-  $_router_patterns.keys | % {
+  $router_patterns.keys | % {
     $this_p = $_
-    if ($router_to_test -match $this_p) {
+    if ($request_to_test -match $this_p) {
       $matches.keys | % {
         if ($_ -is "string") {
           $global:_params[$_]         = $matches[$_]
           $global:_path_variables[$_] = $matches[$_]
         }
       }
-      $_block = $_router_patterns[$this_p]
+      $_block = $router_patterns[$this_p]
       return
     }
   }
