@@ -22,7 +22,7 @@ Create a PowerShell script file, then:
 - GET /static_route
 - GET /path/:with/some/:variable
 - GET /path?with=querystrings
-- POST /people (with request body)
+- POST /people (with request body. Path patterns are also available for POST)
 - ...
 
 >For more info please refer to the scripts in `.\examples\`
