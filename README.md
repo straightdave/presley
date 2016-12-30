@@ -96,6 +96,11 @@ After definding your routers in script `app.ps1`, execute this script:
 ```
 PS> .\app.ps1
 ```
+Then a web service listener is started at http://localhost:9999 by default.
+You can provide specific binding or port to `run` function like:
+```powershell
+run -bind '127.0.0.1' -port 4567
+```
 
 >you can stop listening loop by hitting 'Ctrl-C' in PowerShell session.
 But currently you have to wait for the next request catch to stop the listening loop since http listening blocks.
