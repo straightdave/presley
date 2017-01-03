@@ -1,21 +1,9 @@
 #=====================================================
 # psinatra.ps1 
-# - http://github.com/straightdave/psinatra
-#
-# Naming rules:
-# - all pre-defined objects that exposed 
-#   to programmers have prefix "_";
-# - all pre-defined functions that exposed 
-#   to programmers have no prefix "_";
+# (http://github.com/straightdave/psinatra)
 #=====================================================
 
-$global:_req    = $null
-$global:_params = $null
-$global:_res    = $null
-$global:_body   = $null
-$global:_path_variables = @{}
-
-$routers = @{}
+$routers         = @{}
 $router_patterns = @{}
 
 function get($path, $block) {
@@ -27,20 +15,25 @@ function post($path, $block) {
 }
 
 function run($bind = "localhost", [int]$port = 9999) {
-  [console]::TreatControlCAsInput = $true
-
   if (-not [system.net.httplistener]::IsSupported) {
     write-host "http listener is not supported" -f red
     exit
   }
 
-  # pre-process: analyze their matching patterns
+  [console]::TreatControlCAsInput = $true
+  $workers = @()
+  $pool = [RunspaceFactory]::CreateRunspacePool(1, 50)
+  $pool.open()
+
+  # pre-processing:
+  # analyze the url matching patterns
+  # routers => router_patterns
   $routers.keys | % {
     $p = $_ -replace ":(\w+)", "(?<$+>\w+)"
     $router_patterns["^$p$"] = $routers[$_]
   }
 
-  # start server
+  # start listener:
   $address = "http://$($bind):$($port)"
   try {
     $server = new-object -type system.net.httplistener
@@ -53,89 +46,121 @@ function run($bind = "localhost", [int]$port = 9999) {
     exit
   }
 
+  # main loop:
+  # a) observing keyboard event (ctrl-c)
+  # b) printing each worker's output, if any
   while($server.IsListening) {
     if ([console]::KeyAvailable) {
       $key = [system.console]::readkey($true)
       if (($key.modifiers -band [consolemodifiers]"control") `
-          -and ($key.key -eq "C"))
-      {  
+          -and ($key.key -eq "C")) {  
         write-host "Sinatra is leaving the stage..." -f yellow
+        $server.stop()
         break
       }
     }
 
-    # block until get new request
-    $context        = $server.GetContext()
+    # non-blocking listening
+    $server.beginGetContext({
+      param($async_result)
 
-    # (re)set variables per each request
-    $start_time     = Get-Date
-    $global:_req    = $context.Request
-    $global:_res    = $context.Response
-    $global:_params = $_req.QueryString
-    $global:_path_variables = @{}
+      # get listener reference by callback block param
+      # or we could get this by closure??
+      $_listener = [system.net.httplistener]$async_result.asyncState
+      $_context = $_listener.endGetContext($async_result)
 
-    try {
-      $key   = $_req.HttpMethod + " " + $_req.Url.AbsolutePath
-      $block = _matching_router $key
-      if ($block -ne $null) {
-        if ($block -isnot "scriptblock") {
-          write-host "no block defined for $key" -f red
-          break
-        }
+      # start a new runspace to deal with one request
+      $worker = [powershell]::create()
+      $worker.runspacePool = $pool
 
-        # set request body and add POST/PUT params
-        if ($_req.HttpMethod -eq "POST" -or `
-            $_req.HttpMethod -eq "PUT") {
-          $reader = new-object -type system.io.streamreader `
-                    $_req.inputstream
-          $global:_body = $reader.readtoend()
-          $global:_body.split('&') | % {
-            $this_kv = $_
-            $splits = $this_kv.split('=')
-            $global:_params[$($splits[0])] = (?? $splits[1] "")
-          }
-        }
+      $worker.addScript({
+        param($con)
+        _do_with_request -context $con
+      })
+      $worker.addParameter($_context)
+      $workers += $worker
+      $worker.beginInvoke()
+      # kickoff and forget
+    }, $server)  # pass 'server' as block param, not via closure
 
-        # execute block and respond
-        $block_result = $block.Invoke($global:_path_variables)[-1]
-        if ($block_result -is "hashtable") {
-          _write -res $_res -hash $block_result
-        }
-        else {
-          _write_text -res $_res -text $block_result
-        }
-      }
-      else {
-        # no matched router
-        _write -res $_res `
-               -hash @{code = 404; body = "<h1>Sinatra doesn't know this ditty</h1><h2>$key</h2>"}
-      }
-
-      _log_once -start $start_time
-    }
-    catch {
-      write-host $_.exception.message -f red
-      # break
-    }
+    # print if any workers have output
+    _print_all_workers_output
   }
 
-  $server.stop()
+  _end_all_workers
   "Sinatra stopped his performance. [Applaud]"
+  $server.close()
   exit
 }
 
-function _log_once($start) {
-  $time   = $start
-  $dur    = (Get-Date).millisecond - $start.millisecond
-  $ip     = $_req.RemoteEndPoint
-  $method = $_req.HttpMethod
-  $path   = $_req.RawUrl
-  $ver    = $_req.ProtocolVersion
-  $code   = $_res.StatusCode
-  "$ip -- [$time] `"$method $path`" HTTP $ver $code ($dur ms)"
+function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
+new-alias "??" _coalesce -force
+
+$workers = @()
+function _end_all_workers {
+  $workers | % {
+    $_.endinvoke()
+  }
 }
 
-function _matching_router($request_to_test) {
+function _print_all_workers_output {
+  $workers | % {
+    write-host $_.streams.verbose
+    write-host $_.streams.error -f red
+  }
+}
+
+function _do_with_request($context) {
+  $start_time      = Get-Date
+  $_req            = $context.Request
+  $_res            = $context.Response
+  $_params         = $_req.QueryString
+  $_path_variables = @{}
+
+  try {
+    $key   = $_req.HttpMethod + " " + $_req.Url.AbsolutePath
+    $block = _matching_router -router_patterns $router_patterns `
+                              -request_to_test $key
+
+    if ($block -ne $null) {
+      if ($block -isnot "scriptblock") {
+        _log_err -context $context -message "no block defined for $key"
+        return
+      }
+
+      if ($_req.HttpMethod -eq "POST" -or `
+          $_req.HttpMethod -eq "PUT") {
+        $reader = new-object -type system.io.streamreader `
+                  $_req.inputstream
+        $_body = $reader.readtoend()
+        $_body.split('&') | % {
+          $this_kv = $_
+          $splits = $this_kv.split('=')
+          $_params[$($splits[0])] = (?? $splits[1] "")
+        }
+      }
+
+      $block_result = $block.Invoke($_path_variables)[-1]
+      if ($block_result -is "hashtable") {
+        _write -res $_res -hash $block_result
+      }
+      else {
+        _write_text -res $_res -text $block_result
+      }
+    }
+    else {
+      _write -res $_res `
+             -hash @{code = 404; body = "<h1>Sinatra doesn't know this ditty</h1><h2>$key</h2>"}
+    }
+
+    _log_once -context $context -start_time $start_time
+  }
+  catch {
+    _log_err -context $context -message $_.exception.message
+  }
+}
+
+function _matching_router($router_patterns, $request_to_test) {
   $block = $null
   $router_patterns.keys | % {
     $this_p = $_
@@ -153,23 +178,39 @@ function _matching_router($request_to_test) {
   $block
 }
 
-function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
-new-alias "??" _coalesce -force
+function _log_once($context, $start_time) {
+  $dur    = (Get-Date).millisecond - $start_time.millisecond
+  $ip     = $context.request.RemoteEndPoint
+  $method = $context.request.HttpMethod
+  $path   = $context.request.RawUrl
+  $ver    = $context.request.ProtocolVersion
+  $code   = $context.response.StatusCode
+  write-verbose "$ip -- [$time] `"$method $path`" HTTP $ver $code ($dur ms)" -verbose
+}
 
-function _write($res, [hashtable]$hash = @{}) {
+function _log_err($context, $message) {
+  $ip     = $context.request.RemoteEndPoint
+  $method = $context.request.HttpMethod
+  $path   = $context.request.RawUrl
+  $ver    = $context.request.ProtocolVersion
+  write-verbose "$ip -- [$(get-date)] `"$method $path`" HTTP $ver: $message"
+}
+
+function _write($response, [hashtable]$hash = @{}) {
   $headers = ?? $hash["headers"] @{}
   $headers.keys | % {
-    $res.headers.add($_, $headers[$_])
+    $response.headers.add($_, $headers[$_])
   }
-  $res.StatusCode = ?? $hash["code"] 200
+  $response.StatusCode = ?? $hash["code"] 200
   $body = ?? $hash["body"] ""
   $buffer = [System.Text.Encoding]::utf8.GetBytes($body)
-  $stream = $res.outputstream
+  $stream = $response.outputstream
   $stream.write($buffer, 0, $buffer.length)
   $stream.close()
 }
 
-function _write_text($res, $text) {
-  _write -res $res -hash @{ body = $text }
+function _write_text($response, $text) {
+  _write -response $response -hash @{ body = $text }
 }
+
 
