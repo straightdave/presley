@@ -14,16 +14,11 @@ function post($path, $block) {
   $routers["POST $path"] = $block
 }
 
-function run($bind = "localhost", [int]$port = 9999) {
+function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
   if (-not [system.net.httplistener]::IsSupported) {
     write-host "http listener is not supported" -f red
     exit
   }
-
-  [console]::TreatControlCAsInput = $true
-  $workers = @()
-  $pool = [RunspaceFactory]::CreateRunspacePool(1, 50)
-  $pool.open()
 
   # pre-processing:
   # analyze the url matching patterns
@@ -46,12 +41,18 @@ function run($bind = "localhost", [int]$port = 9999) {
     exit
   }
 
+  [console]::TreatControlCAsInput = $true
+  $pool = [RunspaceFactory]::CreateRunspacePool(1, $max)
+  $pool.open()
+
+  $waiters = $a = New-Object System.Collections.ArrayList
+  
   # main loop:
   # a) observing keyboard event (ctrl-c)
   # b) printing each worker's output, if any
   while($server.IsListening) {
     if ([console]::KeyAvailable) {
-      $key = [system.console]::readkey($true)
+      $key = [system.console]::readkey($false)
       if (($key.modifiers -band [consolemodifiers]"control") `
           -and ($key.key -eq "C")) {  
         write-host "Sinatra is leaving the stage..." -f yellow
@@ -61,49 +62,44 @@ function run($bind = "localhost", [int]$port = 9999) {
     }
 
     # non-blocking listening
-    $server.beginGetContext({
-      param($async_result)
+    $waiter = $server.beginGetContext((_create_callback {
+      param($ar)
 
-      # get listener reference by callback block param
-      # or we could get this by closure??
-      $_listener = [system.net.httplistener]$async_result.asyncState
-      $_context = $_listener.endGetContext($async_result)
+      $_server = [system.net.httplistener]$ar.asyncState
+      $_context = $_server.endGetContext($ar)
+      $_res = $_context.response
+      _write_text -res $_res -text "hello world"
 
-      # start a new runspace to deal with one request
-      $worker = [powershell]::create()
-      $worker.runspacePool = $pool
+      write-host "delete in list..." >> c:\users\wwe\desktop\temp.txt
+      $waiters.remove($ar)
+    }), $server)
 
-      $worker.addScript({
-        param($con)
-        _do_with_request -context $con
-      })
-      $worker.addParameter($_context)
-      $workers += $worker
-      $worker.beginInvoke()
-      # kickoff and forget
-    }, $server)  # pass 'server' as block param, not via closure
+    if ($waiter -eq $null) {
+      write-host "get waiter null" -f red
+      break
+    }
 
-    # print if any workers have output
-    _print_all_workers_output
+    if (-not $waiter.isCompleted) {
+      $waiters.add($waiter)
+    }
+
+    if ($waiters.count -gt 99) {
+      write-host "already 100 waiters waiting." -f yellow
+      $tmp = $waiters[0]
+      $tmp.asyncWaitHandle.waitOne()
+      $waiters.remove($tmp)
+    }
   }
 
-  _end_all_workers
-  "Sinatra stopped his performance. [Applaud]"
   $server.close()
+  "Sinatra stopped his performance. [Applaud]"
   exit
 }
 
 function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
 new-alias "??" _coalesce -force
 
-$workers = @()
-function _end_all_workers {
-  $workers | % {
-    $_.endinvoke()
-  }
-}
-
-function _print_all_workers_output {
+function _print_all_workers_output($workers) {
   $workers | % {
     write-host $_.streams.verbose
     write-host $_.streams.error -f red
@@ -193,7 +189,7 @@ function _log_err($context, $message) {
   $method = $context.request.HttpMethod
   $path   = $context.request.RawUrl
   $ver    = $context.request.ProtocolVersion
-  write-verbose "$ip -- [$(get-date)] `"$method $path`" HTTP $ver: $message"
+  write-verbose "$ip -- [$(get-date)] `"$method $path`" HTTP $ver $message" -verbose
 }
 
 function _write($response, [hashtable]$hash = @{}) {
@@ -211,6 +207,41 @@ function _write($response, [hashtable]$hash = @{}) {
 
 function _write_text($response, $text) {
   _write -response $response -hash @{ body = $text }
+}
+
+function _create_callback ([scriptblock]$Callback) {
+  # thank you Oisin G.
+  # http://www.nivot.org/blog/post/2009/10/09/PowerShell20AsynchronousCallbacksFromNET
+  if (-not ("CallbackEventBridge" -as [type])) {
+    Add-Type @"
+      using System;
+       
+      public sealed class CallbackEventBridge
+      {
+          public event AsyncCallback CallbackComplete = delegate { };
+
+          private CallbackEventBridge() {}
+
+          private void CallbackInternal(IAsyncResult result)
+          {
+              CallbackComplete(result);
+          }
+
+          public AsyncCallback Callback
+          {
+              get { return new AsyncCallback(CallbackInternal); }
+          }
+
+          public static CallbackEventBridge Create()
+          {
+              return new CallbackEventBridge();
+          }
+      }
+"@
+  }
+  $bridge = [callbackeventbridge]::create()
+  Register-ObjectEvent -input $bridge -EventName callbackcomplete -action $callback -messagedata $args > $null
+  $bridge.callback
 }
 
 
