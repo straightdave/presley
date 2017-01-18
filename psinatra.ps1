@@ -15,6 +15,8 @@ function post($path, $block) {
 }
 
 function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
+  [console]::TreatControlCAsInput = $true
+
   if (-not [system.net.httplistener]::IsSupported) {
     write-host "http listener is not supported" -f red
     exit
@@ -40,13 +42,12 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
     write-host "cannot start listening at $address" -f red
     exit
   }
+ 
+  # things passed to isolated AsyncCallback block
+  $state = @{}
+  $state['server']      = $server
+  $state['_write_text'] = Get-ChildItem function:\ | ? { $_.name -eq '_write_text' }
 
-  [console]::TreatControlCAsInput = $true
-  $pool = [RunspaceFactory]::CreateRunspacePool(1, $max)
-  $pool.open()
-
-  $waiters = $a = New-Object System.Collections.ArrayList
-  
   # main loop:
   # a) observing keyboard event (ctrl-c)
   # b) printing each worker's output, if any
@@ -62,33 +63,40 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
     }
 
     # non-blocking listening
-    $waiter = $server.beginGetContext((_create_callback {
+    $result = $server.beginGetContext((_create_async_callback {
       param($ar)
 
-      $_server = [system.net.httplistener]$ar.asyncState
+      # (!!!) This works, but with a big Problem: 
+      # since this block is just a parameter and will be transformated into AsyncCallback by C# code,
+      # this scope is isolated from other functions defined in the script file, 
+      # means you cannot use any functions defined outside this block.
+      # so GetContextAsync() approach may not work.
+
+      # UPDATE (to solve the key problem of scope mix-in):
+      # you can pass user-defined functions in asyncState (as array or dictionary),
+      # and if the function you pass internally invoke other user-defined functions, those are
+      # also included in the state object (your passed outter function can work! no matter it calls other or not)
+      # and also you can pass variables in the asyncState. if not, and such variables are used in functions you pass,
+      # you should mark those variables as 'global'. 
+      # --> (the function you pass can find & invoke others functions you defined outside, 
+      # but cannot find variables you defined outside)
+
+      # so, when defining functions, passing variables via arguments, not mix-in on closure-style.
+      # if some variables should also be open to users (and directly used in functions), mark as 'global', but as little as possible.
+
+      $temp = $ar.asyncState
+      $_server    = [system.net.httplistener]($temp['server'])
+      $_write_fun = [System.Management.Automation.FunctionInfo]($temp['_write_text'])
+
       $_context = $_server.endGetContext($ar)
+
       $_res = $_context.response
-      _write_text -res $_res -text "hello world"
+      
+      $_write_fun.scriptblock.invoke($_res, "helllllll")
 
-      write-host "delete in list..." >> c:\users\wwe\desktop\temp.txt
-      $waiters.remove($ar)
-    }), $server)
+    }), $state)
 
-    if ($waiter -eq $null) {
-      write-host "get waiter null" -f red
-      break
-    }
-
-    if (-not $waiter.isCompleted) {
-      $waiters.add($waiter)
-    }
-
-    if ($waiters.count -gt 99) {
-      write-host "already 100 waiters waiting." -f yellow
-      $tmp = $waiters[0]
-      $tmp.asyncWaitHandle.waitOne()
-      $waiters.remove($tmp)
-    }
+    [void]$result.AsyncWaitHandle.WaitOne(500)   
   }
 
   $server.close()
@@ -96,15 +104,12 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
   exit
 }
 
+#--------------------------
+# internal functions
+#--------------------------
+
 function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
 new-alias "??" _coalesce -force
-
-function _print_all_workers_output($workers) {
-  $workers | % {
-    write-host $_.streams.verbose
-    write-host $_.streams.error -f red
-  }
-}
 
 function _do_with_request($context) {
   $start_time      = Get-Date
@@ -163,8 +168,8 @@ function _matching_router($router_patterns, $request_to_test) {
     if ($request_to_test -match $this_p) {
       $matches.keys | % {
         if ($_ -is "string") {
-          $global:_params[$_]         = $matches[$_]
           $global:_path_variables[$_] = $matches[$_]
+          $global:_params            += $global:_path_variables
         }
       }
       $block = $router_patterns[$this_p]
@@ -209,7 +214,7 @@ function _write_text($response, $text) {
   _write -response $response -hash @{ body = $text }
 }
 
-function _create_callback ([scriptblock]$Callback) {
+function _create_async_callback ([scriptblock]$Callback) {
   # thank you Oisin G.
   # http://www.nivot.org/blog/post/2009/10/09/PowerShell20AsynchronousCallbacksFromNET
   if (-not ("CallbackEventBridge" -as [type])) {
@@ -243,5 +248,3 @@ function _create_callback ([scriptblock]$Callback) {
   Register-ObjectEvent -input $bridge -EventName callbackcomplete -action $callback -messagedata $args > $null
   $bridge.callback
 }
-
-
