@@ -1,6 +1,11 @@
 # pSinatra
 [sinatra](http://www.sinatrarb.com/) for PowerShell!
 
+>### Breakthough!
+The 'multithreading' branch was merged into master. Now pSinatra uses `HttpListener.GetContextAsync()` to do **non-blocking** listening.
+Many secret things about PowerShell multithreading and async style scripting (plus advanced scoping) was learned in such process. :-D   
+As of today (Jan. 19, 2017 Beijing), GET request patterns are tested, leaving other code-polishing work tomorrow.
+
 Don't you think it is extremely hard to setup a simple HTTP server on Windows? Have you ever tried a lot to install a Visual Studio, or downloading huge .Net framework, or doing a great deal of boilerplate work with ASP.NET just for a small and simple server?
 Installing DevKit to mimic things on Linux platform, like Rails (ruby) or Flask (python)? It works but you know on Windows...
 
@@ -102,6 +107,7 @@ You can provide specific binding or port to `run` function like:
 run -bind '127.0.0.1' -port 4567
 ```
 
->you can stop listening loop by hitting 'Ctrl-C' in PowerShell session.
-But currently you have to wait for the next request catch to stop the listening loop since http listening blocks.
-It will get improved (hopefully) in the short future.
+>you can stop listening loop by hitting 'Ctrl-C' in PowerShell session or just close it simply.
+
+# Contribute
+Please please use and feedback!
