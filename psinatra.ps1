@@ -43,10 +43,10 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
     exit
   }
  
-  # things passed to isolated AsyncCallback block
+  # things to be passed to isolated AsyncCallback block
   $state = @{}
-  $state['server']      = $server
-  $state['_write_text'] = Get-ChildItem function:\ | ? { $_.name -eq '_write_text' }
+  $state['server']           = $server
+  $state['_do_with_request'] = Get-ChildItem function:\ | ? { $_.name -eq '_do_with_request' }
 
   # main loop:
   # a) observing keyboard event (ctrl-c)
@@ -81,19 +81,12 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
       # --> (the function you pass can find & invoke others functions you defined outside, 
       # but cannot find variables you defined outside)
 
-      # so, when defining functions, passing variables via arguments, not mix-in on closure-style.
-      # if some variables should also be open to users (and directly used in functions), mark as 'global', but as little as possible.
-
-      $temp = $ar.asyncState
-      $_server    = [system.net.httplistener]($temp['server'])
-      $_write_fun = [System.Management.Automation.FunctionInfo]($temp['_write_text'])
+      $data             = $ar.asyncState
+      $_server          = [system.net.httplistener]($data['server'])
+      $_do_with_request = [System.Management.Automation.FunctionInfo]($data['_do_with_request'])
 
       $_context = $_server.endGetContext($ar)
-
-      $_res = $_context.response
-      
-      $_write_fun.scriptblock.invoke($_res, "helllllll")
-
+      $_do_with_request.ScriptBlock.Invoke($_context)
     }), $state)
 
     [void]$result.AsyncWaitHandle.WaitOne(500)   
@@ -139,6 +132,7 @@ function _do_with_request($context) {
           $splits = $this_kv.split('=')
           $_params[$($splits[0])] = (?? $splits[1] "")
         }
+        $reader.Close()
       }
 
       $block_result = $block.Invoke($_path_variables)[-1]
@@ -168,8 +162,10 @@ function _matching_router($router_patterns, $request_to_test) {
     if ($request_to_test -match $this_p) {
       $matches.keys | % {
         if ($_ -is "string") {
-          $global:_path_variables[$_] = $matches[$_]
-          $global:_params            += $global:_path_variables
+          $_path_variables[$_] = $matches[$_]
+          $_path_variables.Keys | % {
+            $_params[$_] = $_path_variables[$_]
+          }
         }
       }
       $block = $router_patterns[$this_p]
@@ -180,21 +176,23 @@ function _matching_router($router_patterns, $request_to_test) {
 }
 
 function _log_once($context, $start_time) {
-  $dur    = (Get-Date).millisecond - $start_time.millisecond
+  $time   = Get-Date
+  $dur    = $time.millisecond - $start_time.millisecond
   $ip     = $context.request.RemoteEndPoint
   $method = $context.request.HttpMethod
   $path   = $context.request.RawUrl
   $ver    = $context.request.ProtocolVersion
   $code   = $context.response.StatusCode
-  write-verbose "$ip -- [$time] `"$method $path`" HTTP $ver $code ($dur ms)" -verbose
+  Write-Verbose "$ip -- [$($time.ToString("s"))] $method $path HTTP $ver $code ($dur ms)" -Verbose
 }
 
 function _log_err($context, $message) {
+  $time   = Get-Date
   $ip     = $context.request.RemoteEndPoint
   $method = $context.request.HttpMethod
   $path   = $context.request.RawUrl
   $ver    = $context.request.ProtocolVersion
-  write-verbose "$ip -- [$(get-date)] `"$method $path`" HTTP $ver $message" -verbose
+  Write-Verbose "$ip -- [$($time.ToString("s"))] $method $path HTTP $ver $message" -Verbose
 }
 
 function _write($response, [hashtable]$hash = @{}) {
