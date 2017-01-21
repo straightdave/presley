@@ -1,113 +1,212 @@
-# pSinatra
-[sinatra](http://www.sinatrarb.com/) for PowerShell!
+# pSinatra (temp name)
 
->### Breakthough!
-The 'multithreading' branch was merged into master. Now pSinatra uses `HttpListener.GetContextAsync()` to do **non-blocking** listening.
-Many secret things about PowerShell multithreading and async style scripting (plus advanced scoping) was learned in such process. :-D   
-As of today (Jan. 19, 2017 Beijing), GET request patterns are tested, leaving other code-polishing work tomorrow.
-
-Don't you think it is extremely hard to setup a simple HTTP server on Windows? Have you ever tried a lot to install a Visual Studio, or downloading huge .Net framework, or doing a great deal of boilerplate work with ASP.NET just for a small and simple server?
-Installing DevKit to mimic things on Linux platform, like Rails (ruby) or Flask (python)? It works but you know on Windows...
-
-OK. This one is for you.
-
-## How to use
-
-Create a PowerShell script file, then:
-
-* Load pSinatra library
+pSinatra is a [DSL](https://en.wikipedia.org/wiki/Domain-specific_language) for
+quickly creating web applications in PowerShell with minimal effort on Windows:
 
 ```powershell
-. .\psinatra.ps1    # I really love this way loading
-```
-
-* Define your routers
-
->Currently I've just implemented several matching patterns of GET/POST request:
-- GET /static_route
-- GET /path/:with/some/:variable
-- GET /path?with=querystrings
-- POST /people (with request body. Path patterns are also available for POST)
-- ...
-
->For more info please refer to the scripts in `.\examples\`
-
-```powershell
-get '/' {
-  "Hello world!"
-}
-
-get '/hello' {
-  $name = $_params["name"]
-  "Hello $name!"
-}
-
-get '/someurl' {
-  # respond with status code, your extra headers or body
-  @{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
-}
-
-get '/aloha/:name/age/:age' {
-  $name = $_params["name"]
-  $age  = $_params["age"]
-
-  "Aloha $name, you are $age!"
-}
-
-post '/people' {
-	$name = $_params["name"]  # you can get post params quickly this way
-
-	# in POST/PUT request handlers, you can get raw body content
-	# by $_body
-	"posted data: name = $name, body = $_body"
-}
-```
-
-* Add a run command (literally)
-
-```powershell
-run
-```
-
-The full script is like:
-
-```powershell
+# myapp.ps1
 . .\psinatra.ps1
 
 get '/' {
-  "Hello world!"
-}
-
-get '/hello' {
-  $name = $_params["name"]
-  "Hello $name!"
-}
-
-get '/weirdheader' {
-  @{ code = 404; headers = @{ my_header = "header1" }; body = "<h1>hello</h1>"}
-}
-
-post '/people' {
-	# add a person data
-	"{`"msg`": `"done`"}"
+  'Hello world!'
 }
 
 run
 ```
 
-## Run! Forrest, Run!
-After definding your routers in script `app.ps1`, execute this script:
+And run with:
 
-```
-PS> .\app.ps1
-```
-Then a web service listener is started at http://localhost:9999 by default.
-You can provide specific binding or port to `run` function like:
 ```powershell
-run -bind '127.0.0.1' -port 4567
+PS> .\myapp.ps1
 ```
 
->you can stop listening loop by hitting 'Ctrl-C' in PowerShell session or just close it simply.
+View at: [http://localhost:9999](http://localhost:9999)
 
-# Contribute
-Please please use and feedback!
+> You may get it very soon that this pSinatra is inspired by ruby's Sinatra framework. Yes, it is!
+When I was working on a C# backend project I needed a simple tool to create simple HTTP web services.
+I sufferred a lot creating ASP.NET MVC projects, doing so much boilerplate stuff. At that moment I missed Sinatra sooo much.
+So this idea came out to me and I began to work on it.   
+'pSinatra' is temporary. Naming is a good job to do, I leave it to do later.
+
+## Table of Contents
+
+* [pSinatra](#psinatra)
+    * [Table of Contents](#table-of-contents)
+    * [Routes](#routes)
+    * [Return Values](#return-values)
+    * [Views / Templates](#views--templates)
+        * [Literal Templates](#literal-templates)
+        * [Available Template Languages](#available-template-languages)
+            * [EPS Templates](#eps-templates)
+        * [Accessing Variables in Templates](#accessing-variables-in-templates)
+    * [Further Reading](#further-reading)
+
+## Routes
+
+In pSinatra, a route is an HTTP method paired with a URL-matching pattern.
+Each route is associated with a block (implemented so far):
+
+```powershell
+get '/' {
+  .. show something ..
+}
+
+post '/' {
+  .. create something ..
+}
+
+delete '/' {
+  .. annihilate something ..
+}
+```
+
+Routes are matched in the order they are defined. The first route that
+matches the request is invoked.
+
+Route patterns may include named parameters, accessible via the
+`$_params` hash:
+
+```powershell
+get '/hello/:name' {
+  # matches "GET /hello/foo" and "GET /hello/bar"
+  # $_params['name'] is 'foo' or 'bar'
+  "Hello $($_params['name'])!"
+}
+```
+
+You can also access named parameters via block parameters:
+
+```powershell
+get '/hello/:name' {
+  param($arg)
+  
+  # matches "GET /hello/foo" and "GET /hello/bar"
+  # $arg['name'] is 'foo' or 'bar'
+  "Hello $($arg['name'])!"
+}
+```
+
+Routes may also utilize query parameters:
+
+```powershell
+get '/posts' {
+  # matches "GET /posts?title=foo&author=bar"
+  $title  = $_params['title']
+  $author = $_params['author']
+  # uses title and author variables; query is optional to the /posts route
+}
+```
+
+> `$_params` hash contains more things than query parameters or path variables:
+arguments in POST request body (as web form parameters).   
+Also, pre-defined variable `$_body` contains content in POST body. 
+
+## Return Values
+
+The return value of a route block determines at least the response body passed
+on to the HTTP client.   
+
+Most commonly, this is a string, as in the above examples. But other values are
+also accepted. You can return any object that would either be converted to a string.
+
+Further more, you can return a hashtable with 'headers (hashtable)', 'code (Int)'
+and 'body (string)'.
+
+> In PowerShell, the value of the last statement in a block would be the 'return' value
+of that block.
+
+## Views / Templates
+
+Each template language is exposed via its own rendering method. These
+methods simply return a string:
+
+```powershell
+get '/' {
+  eps 'index'
+}
+```
+
+This renders `template/index.eps`.
+
+Instead of a template name, you can also just pass in the template content
+directly:
+
+```powershell
+get '/' {
+  $code = "<%= $(Get-Date).ToString('s') %>"
+  eps $code
+}
+```
+
+> This may be not implemented yet.
+
+### Available Template Languages
+
+So far only EPS adapter is implemented. You should install EPS before using this way rendering:
+
+```powershell
+PS> Install-Module EPS
+```
+
+#### EPS Templates
+
+<table>
+  <tr>
+    <td>Dependency</td>
+    <td>
+      <a href="https://straightdave.github.io/eps/" title="eps">EPS</a>
+    </td>
+  </tr>
+  <tr>
+    <td>File Extensions</td>
+    <td><tt>.eps</tt>
+  </tr>
+  <tr>
+    <td>Example</td>
+    <td><tt>eps 'index'</tt></td>
+  </tr>
+</table>
+
+### Accessing Variables in Templates
+
+Templates are **NOT** evaluated within the same context as route handlers. Instance
+variables set in route handlers should passed to templates:
+
+```powershell
+get '/:id' {
+  $foo = $_params['id']
+  eps 'products' @{ id = $foo }
+}
+```
+
+### Setting Body, Status Code and Headers
+
+Very similar to Sinatra, other than only returning a string as response body, 
+you can return a hashtable which contains headers, status code and body text:
+
+```powershell
+get '/foo' {
+  $response = @{}
+  $response["code"] = 233
+  $response["headers"] = @{ myheader = "bar"; h33 = "2333333"}
+  $response["body"] = "wahahaha hahaha"
+
+  $response
+}
+```
+
+Or simply:
+
+```powershell
+get '/bar' {
+  @{ 
+    headers = @{'ContentType' = 'application/json'}
+    body    = "{`"msg`":`"a msg`"}"
+  }
+}
+```
+
+### Contribute
+Anything is welcomed.
+
+Author: eyaswoo@gmail.com
