@@ -2,7 +2,6 @@
 # psinatra.ps1 
 # (http://github.com/straightdave/psinatra)
 #=====================================================
-
 $routers         = @{}
 $router_patterns = @{}
 
@@ -12,6 +11,10 @@ function get($path, $block) {
 
 function post($path, $block) {
   $routers["POST $path"] = $block
+}
+
+function delete($path, $block) {
+  $routers["DELETE $path"] = $block
 }
 
 function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
@@ -43,14 +46,11 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
     exit
   }
  
-  # things to be passed to isolated AsyncCallback block
+  # package things to be passed to isolated AsyncCallback block
   $state = @{}
   $state['server']           = $server
   $state['_do_with_request'] = Get-ChildItem function:\ | ? { $_.name -eq '_do_with_request' }
 
-  # main loop:
-  # a) observing keyboard event (ctrl-c)
-  # b) printing each worker's output, if any
   while($server.IsListening) {
     if ([console]::KeyAvailable) {
       $key = [system.console]::readkey($false)
@@ -65,30 +65,12 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
     # non-blocking listening
     $result = $server.beginGetContext((_create_async_callback {
       param($ar)
-
-      # (!!!) This works, but with a big Problem: 
-      # since this block is just a parameter and will be transformated into AsyncCallback by C# code,
-      # this scope is isolated from other functions defined in the script file, 
-      # means you cannot use any functions defined outside this block.
-      # so GetContextAsync() approach may not work.
-
-      # UPDATE (to solve the key problem of scope mix-in):
-      # you can pass user-defined functions in asyncState (as array or dictionary),
-      # and if the function you pass internally invoke other user-defined functions, those are
-      # also included in the state object (your passed outter function can work! no matter it calls other or not)
-      # and also you can pass variables in the asyncState. if not, and such variables are used in functions you pass,
-      # you should mark those variables as 'global'. 
-      # --> (the function you pass can find & invoke others functions you defined outside, 
-      # but cannot find variables you defined outside)
-
       $data             = $ar.asyncState
       $_server          = [system.net.httplistener]($data['server'])
+      $_context         = $_server.endGetContext($ar)
       $_do_with_request = [System.Management.Automation.FunctionInfo]($data['_do_with_request'])
-
-      $_context = $_server.endGetContext($ar)
       $_do_with_request.ScriptBlock.Invoke($_context)
     }), $state)
-
     [void]$result.AsyncWaitHandle.WaitOne(500)   
   }
 
@@ -97,10 +79,22 @@ function run($bind = "localhost", [int]$port = 9999, [int]$max = 50) {
   exit
 }
 
+function eps($template_name, $bindings = @{}) {
+  # default rendering using eps:
+  # https://github.com/straightdave/eps
+  # run 'install-module EPS' first to install EPS
+
+  $template_folder = "$(Get-Location)\template"
+  $template_file   = "$template_folder\$template_name.eps"
+
+  # not using safe mode due to a bug of EPS
+  # it should use safe-mode here
+  Invoke-EpsTemplate -Path $template_file -binding $bindings
+}
+
 #--------------------------
 # internal functions
 #--------------------------
-
 function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
 new-alias "??" _coalesce -force
 
