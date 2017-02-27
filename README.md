@@ -22,8 +22,8 @@ PS> .\myapp.ps1
 
 View at: [http://localhost:9999](http://localhost:9999)
 
-> You may get it very soon that this pSinatra is inspired by ruby's Sinatra framework. Yes, it is!
-When I was working on a C# backend project I needed a simple tool to create simple HTTP web services.
+> You may get it very quick that pSinatra is inspired by ruby's Sinatra framework. Yes, it is!
+When I was working on a C# backend project I needed a simple tool to create simple HTTP web services for a mock.
 I sufferred a lot creating ASP.NET MVC projects, doing so much boilerplate stuff. At that moment I missed Sinatra sooo much.
 So this idea came out to me and I began to work on it.   
 'pSinatra' is temporary. Naming is a good job to do, I leave it to do later.
