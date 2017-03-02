@@ -164,7 +164,7 @@ PS> Install-Module EPS
 
 <ul>
   <% 1..5 | % { %>
-  <li><%= %_ %></li>
+  <li><%= $_ %></li>
   <% } %>
 </ul>
 ```
