@@ -1,7 +1,7 @@
 #============================================
-# Test Entry of pSinatra project
+# Test Entry of presley project
 #============================================
-. ..\psinatra.ps1
+. ..\presley.ps1
 
 get '/' {
   "hello world"

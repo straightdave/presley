@@ -1,50 +1,31 @@
-# pSinatra (temp name)
+# Presley
 
-pSinatra is a [DSL](https://en.wikipedia.org/wiki/Domain-specific_language) for
+Presley is a [DSL](https://en.wikipedia.org/wiki/Domain-specific_language) for
 quickly creating web applications in PowerShell with minimal effort on Windows:
 
 ```powershell
 # myapp.ps1
-. .\psinatra.ps1
+. .\presley.ps1
 
 get '/' {
-  'Hello world!'
+  'love me tender'
 }
 
 run
 ```
 
-And run with:
+And start the application:
 
 ```powershell
 PS> .\myapp.ps1
 ```
 
-View at: [http://localhost:9999](http://localhost:9999)
-
-> You may get it very quickly that pSinatra is inspired by ruby's Sinatra framework. Yes, it is!
-When I was working on a C# backend project I needed a simple tool to create simple HTTP web services for a mock.
-I sufferred a lot creating ASP.NET MVC projects, doing so much boilerplate stuff. At that moment I missed Sinatra sooo much.
-So this idea came out to me and I began to work on it.   
-'pSinatra' is temporary. Naming is a good job to do, I leave it to do later.
-
-## Table of Contents
-
-* [pSinatra](#psinatra)
-    * [Table of Contents](#table-of-contents)
-    * [Routes](#routes)
-    * [Return Values](#return-values)
-    * [Views / Templates](#views--templates)
-        * [Literal Templates](#literal-templates)
-        * [Available Template Languages](#available-template-languages)
-            * [EPS Templates](#eps-templates)
-        * [Accessing Variables in Templates](#accessing-variables-in-templates)
-    * [Further Reading](#further-reading)
+View at: [http://localhost:9999/](http://localhost:9999/)
 
 ## Routes
 
-In pSinatra, a route is an HTTP method paired with a URL-matching pattern.
-Each route is associated with a block (implemented so far):
+In Presley, a route is an HTTP method paired with a URL-matching pattern.
+Each route is associated with a block:
 
 ```powershell
 get '/' {
@@ -53,6 +34,10 @@ get '/' {
 
 post '/' {
   .. create something ..
+}
+
+put '/' {
+  .. replace something ..
 }
 
 delete '/' {
@@ -64,17 +49,17 @@ Routes are matched in the order they are defined. The first route that
 matches the request is invoked.
 
 Route patterns may include named parameters, accessible via the
-`$_params` hash:
+`$params` hash:
 
 ```powershell
 get '/hello/:name' {
   # matches "GET /hello/foo" and "GET /hello/bar"
-  # $_params['name'] is 'foo' or 'bar'
-  "Hello $($_params['name'])!"
+  # $params['name'] is 'foo' or 'bar'
+  "Hello $params['name']"
 }
 ```
 
-You can also access named parameters via block parameters:
+You can also access all parameters via `param` keyword inside blocks:
 
 ```powershell
 get '/hello/:name' {
@@ -91,15 +76,29 @@ Routes may also utilize query parameters:
 ```powershell
 get '/posts' {
   # matches "GET /posts?title=foo&author=bar"
-  $title  = $_params['title']
-  $author = $_params['author']
-  # uses title and author variables; query is optional to the /posts route
+  $title  = $params['title']    # => 'foo'
+  $author = $params['author']   # => 'bar'
+  
 }
 ```
 
-> `$_params` hash contains more things than query parameters or path variables:
-arguments in POST request body (as web form parameters).   
-Also, pre-defined variable `$_body` contains content in POST body. 
+> `$params` contains more than query or path variables: form data in POST/PUT requests.   
+Further more, pre-defined variable `$body` contains content in POST body. 
+
+## halt and redirect_to
+Built-in function `halt` can stop processing and respond at once:
+```powershell
+get '/halt' {
+  halt @{code = 404; body = "you'll never find"}
+}
+```
+
+Another built-in function, `redirect_to` can redirect clients to a relative path:
+```powershell
+get '/goto' {
+  redirect_to '/'    # => send 302 and Location='/' to clients
+}
+```
 
 ## Return Values
 
@@ -110,7 +109,17 @@ Most commonly, this is a string, as in the above examples. But other values are
 also accepted. You can return any object that would either be converted to a string.
 
 Further more, you can return a hashtable with 'headers (hashtable)', 'code (Int)'
-and 'body (string)'.
+and 'body (string)', like:
+
+```powershell
+get '/' {
+  @{ 
+    headers = @{ 'Content-Type' = 'application/json' };
+    code    = 200;
+    body    = "{ 'name':'dave', 'age':26 }"
+  }
+}
+```
 
 > In PowerShell, the value of the last statement in a block would be the 'return' value
 of that block.
@@ -140,7 +149,7 @@ get '/' {
 
 > This may be not implemented yet.
 
-### Available Template Languages
+#### Available Template Languages
 
 So far only EPS adapter is implemented. You should install EPS before using this way rendering:
 
@@ -148,36 +157,44 @@ So far only EPS adapter is implemented. You should install EPS before using this
 PS> Install-Module EPS
 ```
 
-#### EPS Templates
+#### Sample EPS Templates
+```html
+<h1><%= $name %></h1>
+<h2><%= $age %></h2>
 
-<table>
-  <tr>
-    <td>Dependency</td>
-    <td>
-      <a href="https://straightdave.github.io/eps/" title="eps">EPS</a>
-    </td>
-  </tr>
-  <tr>
-    <td>File Extensions</td>
-    <td><tt>.eps</tt>
-  </tr>
-  <tr>
-    <td>Example</td>
-    <td><tt>eps 'index'</tt></td>
-  </tr>
-</table>
+<ul>
+  <% 1..5 | % { %>
+  <li><%= %_ %></li>
+  <% } %>
+</ul>
+```
+might output:
+```html
+<h1>dave</h1>
+<h2>26</h2>
 
-### Accessing Variables in Templates
+<ul>
+  <li>1</li>
+  <li>2</li>
+  <li>3</li>
+  <li>4</li>
+  <li>5</li>
+</ul>
+```
+
+#### Accessing Variables in Templates
 
 Templates are **NOT** evaluated within the same context as route handlers. Instance
 variables set in route handlers should passed to templates:
 
 ```powershell
 get '/:id' {
-  $foo = $_params['id']
+  $foo = $params['id']
   eps 'products' @{ id = $foo }
 }
 ```
+
+>For more information, please go to [project EPS in github](https://github.com/straightdave/eps)
 
 ### Setting Body, Status Code and Headers
 
@@ -188,8 +205,8 @@ you can return a hashtable which contains headers, status code and body text:
 get '/foo' {
   $response = @{}
   $response["code"] = 233
-  $response["headers"] = @{ myheader = "bar"; h33 = "2333333"}
-  $response["body"] = "wahahaha hahaha"
+  $response["headers"] = @{ "Content-Type" = "application/json"; h33 = "2333333"}
+  $response["body"] = "[{'name':'dave'}, {'name':'davide'}]"
 
   $response
 }

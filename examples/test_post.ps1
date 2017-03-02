@@ -1,6 +1,6 @@
-# test psinatra POST
+# test presley POST
 
-. ..\psinatra.ps1
+. ..\presley.ps1
 
 get '/person' {
   # get all persons
@@ -11,7 +11,7 @@ get '/person' {
 
 post '/person' {
   # pretend to upload a person
-  $name = $_params["name"]
+  $name = $params["name"]
 
   " $name" >> .\people.tmp
 

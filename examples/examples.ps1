@@ -1,24 +1,24 @@
-# load psinatra
-. ..\psinatra.ps1
+# load presley
+. ..\presley.ps1
 
 get '/mul' {
-  $name = $_params['name']
-  $age = $_params['age']
-  $hobby = $_params['hobby']
+  $name = $params['name']
+  $age = $params['age']
+  $hobby = $params['hobby']
 
   "$name is $age, like $hobby"
 }
 
 # matching 'GET /hello' or 'GET /hello?name=dave' and so on
 get '/hello' {
-  # $_params is a pre-defined hashtable of query string per request
+  # $params is a pre-defined hashtable of query string per request
   # say, if matched '/hello?name=dave&age=12', then 
-  # $_params['name'] => dave and $_params['age'] => 12
-  $name = $_params["name"]
+  # $params['name'] => dave and $params['age'] => 12
+  $name = $params["name"]
 
-  # $_req is pre-defined HttpListenerRequest object per request
+  # $response is pre-defined HttpListenerRequest object per request
   # you can get more data about the request from it
-  $path = $_req.Url.absolutepath
+  $path = $response.Url.absolutepath
 
   # there're two ways to make http response
   # pure text way:
@@ -55,9 +55,7 @@ get '/getjson' {
 # matching 'GET /hi/dave/age/123' and such alike
 # but not 'GET /hi/dave/age/123/hahaha'
 get '/hi/:name/age/:age' {
-  # you can get path variables from both '_params' and '_path_variables'
-  $name = $_path_variables["name"] 
-  $age  = $_params["age"]
+  $age  = $params["age"]
 
   "Hello $name is at age $age!"
 }

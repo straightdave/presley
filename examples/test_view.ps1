@@ -1,7 +1,7 @@
-. ..\psinatra.ps1
+. ..\presley.ps1
 
 get '/hello/:name' {
-  $name = $_params["name"]
+  $name = $params["name"]
   eps 'hello' @{ name = $name }
 }
 
