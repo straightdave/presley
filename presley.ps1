@@ -94,6 +94,14 @@ function eps($template_name, $bindings = @{}) {
   Invoke-EpsTemplate -Path $template_file -binding $bindings
 }
 
+function json($object, [int]$code = 200) {
+  @{
+    headers = @{ 'Content-Type' = 'application/json' };
+    code    = $code;
+    body    = ConvertTo-Json $object
+  }
+}
+
 function halt($responseHash = @{}) {
   # stop processing at once and respond
   $err =  _my_err 'halt', $responseHash

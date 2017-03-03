@@ -124,6 +124,19 @@ get '/' {
 > In PowerShell, the value of the last statement in a block would be the 'return' value
 of that block.
 
+### Return as JSON
+
+You can use `json` function to quickly create a response hash for JSON data:
+
+```powershell
+get '/date' {
+  json $(Get-Date)
+}
+```
+
+> It uses `ConvertTo-Json` cmdlet behind the curtain.
+
+
 ## Views / Templates
 
 Each template language is exposed via its own rendering method. These
