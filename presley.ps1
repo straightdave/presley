@@ -74,12 +74,11 @@ function run([string]$bind = "localhost", [int]$port = 9999) {
       $process_request = [System.Management.Automation.FunctionInfo]($data['_process_request'])
       $process_request.ScriptBlock.Invoke($context)
     }), $state)
-    [void]$result.AsyncWaitHandle.WaitOne(500)   
+    [void]$result.AsyncWaitHandle.WaitOne(500)
   }
 
   $server.close()
   "Presley stopped his performance. [Applaud]"
-  exit
 }
 
 function eps($template_name, $bindings = @{}) {
@@ -111,19 +110,21 @@ function redirect_to($relative_uri) {
 #--------------------------
 # internal functions
 #--------------------------
-function _process_request($context) {
+function _process_request($httpContext) {
   $_process_start_time = Get-Date
   $_path_variables     = @{}
 
-  # notice: 
-  # variables in this block are accessable by users
+  # notice:
+  # variables in this function are accessable in user-defined route blocks
+  # some built-in variables defined here
+  $context  = $httpContext
   $request  = $context.Request
   $response = $context.Response
   $params   = $request.QueryString
 
   try {
     $_key_to_match = $request.HttpMethod + " " + $request.Url.AbsolutePath
-    $_block        = _process_routes $router_patterns $_key_to_match
+    $_block        = _find_block_for_route $router_patterns $_key_to_match
 
     if ($_block -ne $null) {
       if ($_block -isnot "scriptblock") {
@@ -170,7 +171,6 @@ function _process_request($context) {
       }
     }
 
-    # not halted
     _log_err -context $context -message $_.exception.message
     _write -res $response `
           -hash @{
@@ -181,19 +181,23 @@ function _process_request($context) {
   }
 }
 
-function _process_routes($router_patterns, $key_to_match) {
-  $router_patterns.keys | % {
-    $this_pattern = $_
-    if ($key_to_match -match $this_pattern) {
+function _find_block_for_route($patternHash, $key) {
+  $patternHash.keys | % {
+    $p = $_
+    if ($key -match $p) {
       $matches.keys | % {
         if ($_ -is "string") {
+          # note: 
+          # $_path_variables and $params here are
+          # all accessable from outer scope (user's route blocks);
+          # here fill in them with named arguments in path
           $_path_variables[$_] = $matches[$_]
           $_path_variables.Keys | % {
             $params[$_] = $_path_variables[$_]
           }
         }
       }
-      $block = $router_patterns[$this_pattern]
+      $block = $router_patterns[$p]
       return
     }
   }
@@ -201,9 +205,10 @@ function _process_routes($router_patterns, $key_to_match) {
 }
 
 function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
-new-alias "??" _coalesce -force
+New-Alias "??" _coalesce -force
 
 function _my_err([array]$errorData) {
+  # $errorData must consists of 0-name and 1-data object
   if (-not ("PresleyException" -as [type])) {
     Write-Verbose "define my exception" -Verbose
     Add-Type @"
@@ -256,12 +261,6 @@ function _write($response, [hashtable]$hash = @{}) {
 
 function _write_text($response, $text) {
   _write -response $response -hash @{ body = $text }
-}
-
-function _flatten_dict([hashtable]$dict = @{}) {
-  $sb = New-Object -type System.Text.StringBuilder
-  $dict.Keys | % { [void]$sb.Append($_ + "=" + $dict[$_] + ";") }
-  $sb.ToString()
 }
 
 function _create_async_callback ([scriptblock]$Callback) {
