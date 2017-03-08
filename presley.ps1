@@ -1,12 +1,14 @@
-#=====================================================
-# presley.ps1 
-# (http://github.com/straightdave/presley)
-#=====================================================
-$routes          = @{}
-$router_patterns = @{}
+#==========================================================
+# presley.ps1 - a web framework for Windows in PowerShell
+# http://github.com/straightdave/presley
+#==========================================================
 
+#--------------------------
+# stuff exposed to users
+#--------------------------
 function get([string]$pattern, [scriptblock]$block) {
   $routes["GET $pattern"] = $block
+  #$routes["HEAD $pattern"] = $block
 }
 
 function post([string]$pattern, [scriptblock]$block) {
@@ -17,17 +19,28 @@ function put([string]$pattern, [scriptblock]$block) {
   $routes["PUT $pattern"] = $block
 }
 
+function patch([string]$pattern, [scriptblock]$block) {
+  $routes["PATCH $pattern"] = $block
+}
+
 function delete([string]$pattern, [scriptblock]$block) {
   $routes["DELETE $pattern"] = $block
 }
 
-function run([string]$bind = "localhost", [int]$port = 9999) {
+function set([string]$configKey, [string]$configValue) {
+  $configs[$configKey] = $configValue
+}
+
+function run([string]$bind = "localhost", [int]$port = 9999, [hashtable]$config = @{}) {
   [console]::TreatControlCAsInput = $true
 
   if (-not [system.net.httplistener]::IsSupported) {
     Write-Host "System.Net.HttpListener is not supported" -f red
-    exit
+    return
   }
+
+  # merge config
+  $config.Keys | % { $configs[$_] = $config[$_] }
 
   # parse routes
   $routes.keys | % {
@@ -35,8 +48,8 @@ function run([string]$bind = "localhost", [int]$port = 9999) {
     $router_patterns["^$p$"] = $routes[$_]
   }
 
-  # start listener:
-  $address = "http://$($bind):$($port)"
+  # start listener
+  $address = "http://$bind`:$port"
   try {
     $server = new-object -type system.net.httplistener
     $server.prefixes.add("$address/")
@@ -45,11 +58,11 @@ function run([string]$bind = "localhost", [int]$port = 9999) {
   }
   catch {
     Write-Host "cannot start listening at $address" -f red
-    exit
+    return
   }
- 
-  # packaging listener and request processing function
-  # as input data of callback blocks per request
+
+  # tricks: using $state to package listener and request-process function
+  # as the input data of callback blocks per request
   $state = @{}
   $state['server']           = $server
   $state['_process_request'] = Get-ChildItem function:\ | ? { $_.name -eq '_process_request' }
@@ -58,14 +71,13 @@ function run([string]$bind = "localhost", [int]$port = 9999) {
     if ([console]::KeyAvailable) {
       $key = [system.console]::readkey($false)
       if (($key.modifiers -band [consolemodifiers]"control") `
-          -and ($key.key -eq "C")) {  
+          -and ($key.key -eq "C")) {
         Write-Host "Presley is leaving the stage..." -f yellow
         $server.stop()
         break
       }
     }
 
-    # non-blocking listening
     $result = $server.beginGetContext((_create_async_callback {
       param($ar)
       $data            = $ar.asyncState
@@ -78,20 +90,18 @@ function run([string]$bind = "localhost", [int]$port = 9999) {
   }
 
   $server.close()
-  "Presley stopped his performance. [Applaud]"
+  "Presley finished his performance. [Applaud]"
 }
 
 function eps($template_name, $bindings = @{}) {
-  # default rendering using eps:
-  # https://github.com/straightdave/eps
-  # run 'install-module EPS' first to install EPS
+  # using EPS (https://github.com/straightdave/eps) to render response
+  # run 'install-module EPS' at first to install EPS
 
-  $template_folder = "$(Get-Location)\views"
-  $template_file   = "$template_folder\$template_name.eps"
-
-  # not using safe mode due to a bug of EPS
-  # it should use safe-mode here
-  Invoke-EpsTemplate -Path $template_file -binding $bindings
+  $template_location  = ?? $configs["template_folder"] "views"
+  $template_extension = ?? $configs["template_ext"] "eps"
+  $template_folder    = "$(Get-Location)\$template_location"
+  $template_file      = "$template_folder\$template_name.$template_extension"
+  Invoke-EpsTemplate -Path $template_file -safe -binding $bindings
 }
 
 function json($object, [int]$code = 200) {
@@ -102,29 +112,47 @@ function json($object, [int]$code = 200) {
   }
 }
 
+function html($text, [int]$code = 200) {
+  @{
+    headers = @{ 'Content-Type' = 'text/html' };
+    code    = $code;
+    body    = $text
+  }
+}
+
 function halt($responseHash = @{}) {
-  # stop processing at once and respond
   $err =  _my_err 'halt', $responseHash
   throw $err
 }
 
-function redirect_to($relative_uri) {
+function redirect_to($relative_uri, $code = 302) {
   halt @{
-    code = 302;
+    code = $code;
     headers = @{ Location = $relative_uri }
   }
 }
 
-#--------------------------
-# internal functions
-#--------------------------
+#------------------------------------------------------
+# internal stuff:
+# currently I just WISH with crossed fingers that
+# users won't use stuff here
+#------------------------------------------------------
+$routes          = @{}
+$router_patterns = @{}
+$configs         = @{
+  "template_folder"  = "views";
+  "template_ext"     = "eps";
+  "default_encoding" = "utf8";
+  "env"              = "dev";
+}
+
 function _process_request($httpContext) {
   $_process_start_time = Get-Date
   $_path_variables     = @{}
 
-  # notice:
-  # variables in this function are accessable in user-defined route blocks
-  # some built-in variables defined here
+  # heads-up:
+  # variables in this function are accessable in user-defined route blocks.
+  # some built-in variables defined here:
   $context  = $httpContext
   $request  = $context.Request
   $response = $context.Response
@@ -135,21 +163,20 @@ function _process_request($httpContext) {
     $_block        = _find_block_for_route $router_patterns $_key_to_match
 
     if ($_block -ne $null) {
-      if ($_block -isnot "scriptblock") {
-        _log_err -context $context -message "no block defined for $_key_to_match"
-        throw "no block defined for $_key_to_match"
-      }
-
       if ($request.HttpMethod -eq "POST" -or `
-          $request.HttpMethod -eq "PUT") {
+          $request.HttpMethod -eq "PUT"  -or `
+          $request.HttpMethod -eq "PATCH") {
         $_reader = New-Object -type system.io.streamreader `
                    $request.inputstream
         $body = $_reader.readtoend()
-        $body.split('&') | % {
-          $_splits = $_.split('=')
-          $params[$($_splits[0])] = (?? $_splits[1] "")
-        }
         $_reader.Close()
+
+        if ($request.ContentType -eq "application/x-www-form-urlencoded") {
+          $body.split('&') | % {
+            $_splits = $_.split('=')
+            $params[$($_splits[0])] = ?? $_splits[1] ""
+          }
+        }
       }
 
       $block_result = $_block.Invoke($_path_variables)[-1]
@@ -160,18 +187,19 @@ function _process_request($httpContext) {
         _write_text -res $response -text $block_result
       }
     }
+
     else {
       _write -res $response `
              -hash @{
-               code = 404; 
+               code = 404;
                body = "<h1>Presley doesn't know this ditty</h1><p>$_key_to_match</p>"
               }
     }
+
     _log_once -context $context -start_time $_process_start_time
   }
   catch {
     $err = $_.exception.GetBaseException()
-
     if ($err -is "PresleyException") {
       if ($err.Name -eq 'halt') {
         _write -response $response -hash $err.Data
@@ -195,10 +223,6 @@ function _find_block_for_route($patternHash, $key) {
     if ($key -match $p) {
       $matches.keys | % {
         if ($_ -is "string") {
-          # note: 
-          # $_path_variables and $params here are
-          # all accessable from outer scope (user's route blocks);
-          # here fill in them with named arguments in path
           $_path_variables[$_] = $matches[$_]
           $_path_variables.Keys | % {
             $params[$_] = $_path_variables[$_]
@@ -216,11 +240,10 @@ function _coalesce($a, $b) { if ($a -ne $null) { $a } else { $b } }
 New-Alias "??" _coalesce -force
 
 function _my_err([array]$errorData) {
-  # $errorData must consists of 0-name and 1-data object
   if (-not ("PresleyException" -as [type])) {
     Write-Verbose "define my exception" -Verbose
     Add-Type @"
-      using System;   
+      using System;
       public sealed class PresleyException: Exception
       {
           public string Name { get; set; }
@@ -254,17 +277,21 @@ function _log_err($context, $message) {
   Write-Verbose "$ip -- [$($time.ToString("s"))] $method $path HTTP $ver $message" -Verbose
 }
 
-function _write($response, [hashtable]$hash = @{}) {
+function _write($response, [hashtable]$hash = @{}, [boolean]$hasBody = $true) {
   $headers = ?? $hash["headers"] @{}
-  $headers.keys | % {
-    $response.headers.add($_, $headers[$_])
-  }
+  $headers.keys | % { $response.headers.add($_, $headers[$_]) }
   $response.StatusCode = ?? $hash["code"] 200
   $body = ?? $hash["body"] ""
-  $buffer = [System.Text.Encoding]::utf8.GetBytes($body)
-  $stream = $response.outputstream
-  $stream.write($buffer, 0, $buffer.length)
-  $stream.close()
+  $_encoding = ?? $configs["default_encoding"] "utf8"
+  $buffer = [System.Text.Encoding]::($_encoding).GetBytes($body)
+
+  #$response.ContentLength = $buffer.length  # WRONG
+  
+  if ($hasBody) {
+    $stream = $response.outputstream
+    $stream.write($buffer, 0, $buffer.length)
+    $stream.close()
+  }
 }
 
 function _write_text($response, $text) {
@@ -277,7 +304,7 @@ function _create_async_callback ([scriptblock]$Callback) {
   if (-not ("CallbackEventBridge" -as [type])) {
     Add-Type @"
       using System;
-       
+
       public sealed class CallbackEventBridge
       {
           public event AsyncCallback CallbackComplete = delegate { };
@@ -309,7 +336,6 @@ function _create_async_callback ([scriptblock]$Callback) {
 # define built-in routes
 #------------------------
 get '/_routes' {
-  # show all defined routes
   $sb = New-Object -type System.Text.StringBuilder
   [void]$sb.Append("<p><table>")
   $routes.Keys | % { [void]$sb.Append("<tr><td>$_</td></tr>") }
