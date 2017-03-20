@@ -22,6 +22,8 @@ PS> .\myapp.ps1
 
 View at: [http://localhost:9999/](http://localhost:9999/)
 
+![Screenshot](Capture.PNG)
+
 ## Routes
 
 In Presley, a route is an HTTP method paired with a URL-matching pattern.
