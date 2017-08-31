@@ -24,6 +24,11 @@ View at: [http://localhost:9999/](http://localhost:9999/)
 
 ![Screenshot](Capture.PNG)
 
+>Todo:
+> Next step is to wrap functionalities into a container (either class or module).
+> Then to make it downloadable from PowerShellGallery
+
+
 ## Routes
 
 In Presley, a route is an HTTP method paired with a URL-matching pattern.
